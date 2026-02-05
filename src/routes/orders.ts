@@ -26,17 +26,6 @@ const orderResponseSchema = {
     lastError: { type: ['string', 'null'] },
     createdAt: { type: 'string', format: 'date-time' },
   },
-  example: {
-    id: 'uuid',
-    orderId: 'SHOE-001',
-    customer: 'Alice',
-    total: 199.99,
-    status: 'PENDING',
-    attempts: 0,
-    lockedAt: null,
-    lastError: null,
-    createdAt: '2026-02-05T10:00:00.000Z',
-  },
 }
 
 const errorResponseSchema = {
@@ -65,11 +54,6 @@ export async function ordersRoutes(app: FastifyInstance) {
           orderId: { type: 'string' },
           customer: { type: 'string' },
           total: { type: 'number' },
-        },
-        example: {
-          orderId: 'SHOE-001',
-          customer: 'Alice',
-          total: 199.99,
         },
       },
       response: {

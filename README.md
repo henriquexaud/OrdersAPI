@@ -1,68 +1,96 @@
 # OscarPS Orders API + Worker
 
-Fastify + Prisma + PostgreSQL with a lightweight polling worker for async order processing (shoe e-commerce context). Includes Swagger UI, Docker Compose, Zod env/input validation, and Pino logs.
+API Fastify + Prisma + PostgreSQL com worker de polling leve para processar pedidos de forma assíncrona (contexto e-commerce de calçados). Inclui Swagger UI, Docker Compose, validação via Zod (env e payload), e logs com Pino.
 
-## Quickstart (local)
-1) Requirements: Node 20+, Postgres running. Copy env and install deps:
+## Como rodar (local)
+
+1. Requisitos: Node 20+, Postgres ativo. Copie variáveis e instale deps:
+
 ```
 cp .env.example .env
 npm install
 ```
-2) Run migrations (DB must be up):
+
+2. Rode migrações (DB precisa estar de pé):
+
 ```
 npm run db:migrate
 ```
-3) Start services (two terminals):
+
+3. Suba API e worker (dois terminais):
+
 ```
-npm run dev     # API (Swagger at http://localhost:3000/docs)
-npm run worker  # background processor
+npm run dev     # API (Swagger em http://localhost:3000/docs)
+npm run worker  # processador de pedidos
 ```
 
-## Quickstart (Docker)
+## Como rodar (Docker)
+
 ```
 docker compose up -d db
 docker compose run --rm api npm run db:migrate
 docker compose up -d api worker
 ```
-- API: http://localhost:3000
-- Worker shares the same DB and runs automatically.
 
-## Usage
+- API: http://localhost:3000
+- Worker usa o mesmo banco e roda automaticamente.
+
+## Uso rápido
+
 - Health: `curl http://localhost:3000/health`
-- Create order (idempotent on `orderId`):
+- Criar pedido (idempotente em `orderId`):
+
 ```
 curl -X POST http://localhost:3000/orders \
   -H "Content-Type: application/json" \
   -d '{"orderId":"SHOE-001","customer":"Alice","total":199.99}'
 ```
-- Fetch by orderId:
+
+- Buscar por orderId:
+
 ```
 curl http://localhost:3000/orders/SHOE-001
 ```
-Expected flow: POST returns `PENDING`; worker locks → waits ~2s → updates to `PROCESSED`. Duplicate POST returns the existing record (200).
 
-## Worker behavior
-- Polls every `WORKER_POLL_INTERVAL_MS` with small jitter to avoid thundering herd.
-- Selects PENDING orders not locked and under `WORKER_MAX_ATTEMPTS`.
-- Locks row, simulates processing (`WORKER_PROCESSING_DELAY_MS`), marks `PROCESSED`.
-- On failure: increments `attempts`, records `lastError`, releases lock; stops after max attempts.
+Fluxo esperado: POST retorna `PENDING`; worker aplica lock → simula ~2s → marca `PROCESSED`. POST duplicado devolve o registro existente (200).
 
-## Data model
-- Order: `id (uuid)`, `orderId (unique)`, `customer`, `total (decimal)`, `status (PENDING|PROCESSED)`, `attempts`, `lockedAt`, `lastError`, `createdAt`.
+## Comportamento do worker
 
-## Scripts
-- `npm run dev` / `npm run start` — API (dev / built).
-- `npm run worker` — worker.
-- `npm run db:migrate` — apply migrations.
-- `npm run db:generate` — regenerate Prisma client.
-- `npm run build` — type-check/emit.
-- `npm test` — placeholder (Vitest installed).
+- Polling a cada `WORKER_POLL_INTERVAL_MS` com jitter para evitar rajadas sincronizadas.
+- Seleciona pedidos `PENDING` sem lock e com `attempts < WORKER_MAX_ATTEMPTS`.
+- Faz lock pessimista (campo `lockedAt`), simula processamento (`WORKER_PROCESSING_DELAY_MS`) e marca `PROCESSED`.
+- Em falha: incrementa `attempts`, registra `lastError`, libera lock; para após limite de tentativas.
 
-## Decisions
-- Idempotência via unique `orderId` + fallback select on P2002.
-- Polling worker (DB-backed) instead of external queue to keep stack minimal for the challenge.
-- Pino logging and Swagger for basic observability and contract clarity.
+## Modelo de dados
 
-## Troubleshooting
-- Prisma engine/SSL: Compose uses debian-based node image to avoid musl/openssl issues.
-- Ports: Postgres 5432, API 3000.
+- Order: `id (uuid)`, `orderId` (unique), `customer`, `total (decimal)`, `status (PENDING|PROCESSED)`, `attempts`, `lockedAt`, `lastError`, `createdAt`.
+
+## Scripts principais
+
+- `npm run dev` / `npm run start` — API (dev / build).
+- `npm run worker` — worker dedicado.
+- `npm run db:migrate` — aplica migrações.
+- `npm run db:generate` — regenera Prisma Client.
+- `npm run build` — checa tipos/emite build.
+- `npm test` — placeholder (Vitest instalado).
+
+## Decisões técnicas (e por quê)
+
+- Fastify + Pino: performance e logs estruturados de fábrica, bom custo/benefício para API simples.
+- Prisma + PostgreSQL: esquema tipado, migrações e client gerado; Postgres já atende consistência e locking necessário para o worker.
+- Polling com lock em DB: elimina dependência de fila externa; suficiente para throughput do desafio. Campo `lockedAt` evita corrida entre workers.
+- Idempotência em `orderId`: unique constraint + tratamento de P2002 garante evitar duplicidades mesmo sob concorrência.
+- Zod no input/env: falha rápida e mensagens claras antes de tocar a camada de dados.
+- Swagger: contrato visível e testável via `/docs` sem precisar de cliente dedicado.
+- Jitter + backoff no worker: reduz thundering herd e dá tempo de resfriamento em falhas.
+
+## Solução de problemas
+
+- Prisma/SSL em Alpine: imagens Docker usam Node 20 baseado em Debian para evitar erros de OpenSSL/musl.
+- Portas: Postgres 5432, API 3000.
+
+## Testes rápidos manuais
+
+1. Criar pedido: `curl -X POST http://localhost:3000/orders -H "Content-Type: application/json" -d '{"orderId":"SHOE-002","customer":"Bob","total":149.9}'`
+2. Aguardar ~2s e verificar: `curl http://localhost:3000/orders/SHOE-002`
+   - Esperado: status `PROCESSED`, `attempts` zerado.
