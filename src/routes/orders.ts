@@ -26,6 +26,17 @@ const orderResponseSchema = {
     lastError: { type: ['string', 'null'] },
     createdAt: { type: 'string', format: 'date-time' },
   },
+  example: {
+    id: 'uuid',
+    orderId: 'SHOE-001',
+    customer: 'Alice',
+    total: 199.99,
+    status: 'PENDING',
+    attempts: 0,
+    lockedAt: null,
+    lastError: null,
+    createdAt: '2026-02-05T10:00:00.000Z',
+  },
 }
 
 const errorResponseSchema = {
@@ -46,6 +57,7 @@ export async function ordersRoutes(app: FastifyInstance) {
     schema: {
       summary: 'Create order (idempotent)',
       tags: ['orders'],
+      description: 'Creates or returns an order by orderId. Duplicate orderId returns the existing row (idempotent).',
       body: {
         type: 'object',
         required: ['orderId', 'customer', 'total'],
@@ -53,6 +65,11 @@ export async function ordersRoutes(app: FastifyInstance) {
           orderId: { type: 'string' },
           customer: { type: 'string' },
           total: { type: 'number' },
+        },
+        example: {
+          orderId: 'SHOE-001',
+          customer: 'Alice',
+          total: 199.99,
         },
       },
       response: {
@@ -79,6 +96,7 @@ export async function ordersRoutes(app: FastifyInstance) {
     schema: {
       summary: 'Get order by orderId',
       tags: ['orders'],
+      description: 'Fetches an order by its business identifier.',
       params: {
         type: 'object',
         required: ['orderId'],

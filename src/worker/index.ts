@@ -9,6 +9,7 @@ import {
 } from '../services/orderService'
 
 const logger = pino({ name: 'worker', level: env.NODE_ENV === 'production' ? 'info' : 'debug' })
+let running = true
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -30,7 +31,7 @@ async function processOrder(orderId: string, attempts: number, orderRef: string)
 async function workLoop() {
   logger.info('Worker started')
 
-  while (true) {
+  while (running) {
     try {
       const pendingOrders = await fetchPendingOrders(env.WORKER_BATCH_SIZE, env.WORKER_MAX_ATTEMPTS)
 
@@ -44,17 +45,24 @@ async function workLoop() {
       logger.error({ err: error }, 'Worker loop failure, will retry')
     }
 
-    await sleep(env.WORKER_POLL_INTERVAL_MS)
+    const jitter = Math.floor(Math.random() * 150)
+    await sleep(env.WORKER_POLL_INTERVAL_MS + jitter)
   }
+
+  logger.info('Worker stopped')
 }
 
-workLoop().catch((err) => {
+const loopPromise = workLoop()
+
+loopPromise.catch((err) => {
   logger.error({ err }, 'Worker crashed')
   process.exit(1)
 })
 
 const shutdown = async (signal: NodeJS.Signals) => {
   logger.info({ signal }, 'Shutting down worker')
+  running = false
+  await loopPromise.catch(() => undefined)
   await prisma.$disconnect().catch(() => logger.warn('Failed to disconnect Prisma cleanly'))
   process.exit(0)
 }
